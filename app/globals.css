@@ -1873,3 +1873,73 @@ input[type="range"].mini::-webkit-slider-runnable-track {
 .fold[open] summary::before {
   transform: rotate(45deg);
 }
+
+/* keyboard shortcuts popover */
+.keys-pop {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(14, 16, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+.keys-pop dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.keys-pop dd { margin: 0; opacity: 0.8; }
+.keys-pop kbd {
+  font: 11px ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------------- phones ---------------- */
+@media (max-width: 820px) {
+  .topbar {
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 10px 12px;
+    gap: 10px;
+    pointer-events: auto;
+  }
+  .topbar::-webkit-scrollbar {
+    display: none;
+  }
+  .topbar > * {
+    flex-shrink: 0;
+  }
+  .comp-name {
+    width: 150px;
+  }
+  .bottom {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 14px;
+    padding: 10px 12px;
+    width: calc(100% - 24px);
+    bottom: 12px;
+    border-radius: 20px;
+  }
+  .macro {
+    flex: 1 1 40%;
+    min-width: 120px;
+    width: auto;
+  }
+  .panel {
+    top: 58px;
+    bottom: 196px;
+  }
+}

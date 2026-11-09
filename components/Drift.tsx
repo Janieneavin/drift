@@ -74,8 +74,23 @@ export default function Drift() {
   const [showCompose, setShowCompose] = useState(true);
   const [showSystem, setShowSystem] = useState(true);
   const [showLibrary, setShowLibrary] = useState(false);
+  // phones only have room for one panel at a time
+  const narrow = () => typeof window !== "undefined" && window.innerWidth < 820;
+  const openOnly = (which: "compose" | "system" | "library", open: boolean) => {
+    if (open && narrow()) {
+      setShowCompose(which === "compose");
+      setShowSystem(which === "system");
+      setShowLibrary(which === "library");
+    } else if (which === "compose") setShowCompose(open);
+    else if (which === "system") setShowSystem(open);
+    else setShowLibrary(open);
+  };
+  useEffect(() => {
+    if (narrow()) setShowSystem(false);
+  }, []);
   const [showHistory, setShowHistory] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
   const [uiAwake, setUiAwake] = useState(true);
   const [backdropOk, setBackdropOk] = useState(true);
   const onNoBackdrop = useCallback(() => setBackdropOk(false), []);
@@ -124,8 +139,8 @@ export default function Drift() {
     import("@/lib/engine/Engine").then(({ Engine }) => {
       if (!alive) return;
       const e = new Engine(configRef.current);
-      // handy for inspecting the engine from the browser console
-      (window as unknown as { drift?: unknown }).drift = e;
+      // handy for inspecting the engine from the browser console (development only)
+      if (process.env.NODE_ENV !== "production") (window as unknown as { drift?: unknown }).drift = e;
       setEngine(e);
     });
     aiAvailable().then((ok) => alive && setAi(ok ? "ai" : "offline"));
@@ -310,6 +325,8 @@ export default function Drift() {
         e.preventDefault();
         togglePlay();
       }
+      if (e.key === "Escape") setShowKeys(false);
+      if (e.key === "?" && !typing) setShowKeys((v) => !v);
       if (e.key === "Escape" && immersive) exitImmersive();
       if (e.key.toLowerCase() === "f" && !typing && !e.metaKey && !e.ctrlKey) {
         if (immersive) exitImmersive();
@@ -535,6 +552,19 @@ export default function Drift() {
   return (
     <div className={`app ${immersive ? "immersive" : ""} ${immersive && !uiAwake ? "asleep" : ""}`}>
       {backdropOk && <ShaderBackdrop engine={engine} openX={openX} onUnsupported={onNoBackdrop} />}
+      {showKeys && (
+        <div className="keys-pop" role="dialog" aria-label="Keyboard shortcuts" onClick={() => setShowKeys(false)}>
+          <p className="label">Keyboard shortcuts</p>
+          <dl>
+            <dt><kbd>Space</kbd></dt><dd>Play / stop</dd>
+            <dt><kbd>F</kbd></dt><dd>Immersive view</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Leave immersive / close this</dd>
+            <dt><kbd>⌘/Ctrl</kbd> <kbd>Z</kbd></dt><dd>Undo</dd>
+            <dt><kbd>⇧</kbd> <kbd>⌘/Ctrl</kbd> <kbd>Z</kbd></dt><dd>Redo</dd>
+            <dt><kbd>?</kbd></dt><dd>Show / hide shortcuts</dd>
+          </dl>
+        </div>
+      )}
       <Visualizer engine={engine} config={config} hoveredRule={hoveredRule} insets={insets} backdrop={backdropOk} immersive={immersive} />
 
       {!started && (
@@ -575,15 +605,15 @@ export default function Drift() {
           </button>
         </div>
         <div className="toolbar">
-          <button className={`icon-btn ${showCompose ? "active" : ""}`} onClick={() => setShowCompose((s) => !s)} title="Show or hide the compose panel">
+          <button className={`icon-btn ${showCompose ? "active" : ""}`} onClick={() => openOnly("compose", !showCompose)} title="Show or hide the compose panel">
             <ComposeIcon />
             Compose
           </button>
-          <button className={`icon-btn ${showSystem ? "active" : ""}`} onClick={() => setShowSystem((s) => !s)} title="Show or hide your musical system">
+          <button className={`icon-btn ${showSystem ? "active" : ""}`} onClick={() => openOnly("system", !showSystem)} title="Show or hide your musical system">
             <SystemIcon />
             System
           </button>
-          <button className={`icon-btn ${showLibrary ? "active" : ""}`} onClick={() => setShowLibrary((s) => !s)} title="Saved systems, snapshots and recordings">
+          <button className={`icon-btn ${showLibrary ? "active" : ""}`} onClick={() => openOnly("library", !showLibrary)} title="Saved systems, snapshots and recordings">
             <LibraryIcon />
             Library
           </button>
@@ -592,6 +622,9 @@ export default function Drift() {
           <button className={`icon-btn ${immersive ? "active" : ""}`} onClick={immersive ? exitImmersive : enterImmersive} title="Fill the screen with the visuals (F · Esc to leave)">
             <ImmersiveIcon />
             {immersive ? "Exit" : "Immersive"}
+          </button>
+          <button className={`icon-btn ${showKeys ? "active" : ""}`} onClick={() => setShowKeys((v) => !v)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+            ?
           </button>
         </div>
         <div className="toolbar">

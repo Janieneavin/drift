@@ -1,60 +1,54 @@
 # DRIFT
 
-An instrument for people who don't play instruments. You design the conditions — what it should feel like and how it should behave — and a generative engine plays original music from them, forever, never quite the same.
+**An instrument for people who don't play instruments.** You describe a feeling or a place, shape how the music should behave, and DRIFT plays original music from those conditions — continuously, never quite the same twice.
+
+For what DRIFT does and how it works, see **[docs/OVERVIEW.md](docs/OVERVIEW.md)**.
+
+---
 
 ## Run it
 
-Node is installed in `~/.local/node` (no admin rights needed).
+You need **Node.js 20 or newer** (the LTS version from [nodejs.org](https://nodejs.org) is fine) and a modern desktop browser (Chrome, Edge, Firefox or Safari).
 
 ```bash
-cd ~/drift
-export PATH=~/.local/node/bin:$PATH
+git clone https://github.com/Janieneavin/drift.git
+cd drift
+npm install
 npm run dev
 ```
 
-Open http://localhost:3210 and press play (or the space bar).
+Open **http://localhost:3210** and press **Play** (or the space bar). Browsers only allow sound after you interact with the page, so the first click is needed.
 
-### Turn on the AI interpreter
+The first time it plays, the piano recordings stream from the internet (about 2 MB, then cached). Offline, a soft synthesized piano is used instead.
 
-Without a key, DRIFT uses a clearly labelled **offline interpreter** (keyword matching) so the instrument always works. For full natural-language interpretation with Claude:
+### Optional: the AI interpreter
+
+Without a key, DRIFT works fully, and typed requests use a simple offline interpreter that understands phrases like *slower, warmer, add drums, change the key to D*. To let Claude interpret anything you type:
+
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com) (usage is billed per request — typically a few cents).
+2. Copy `.env.local.example` to `.env.local` and paste the key after `ANTHROPIC_API_KEY=`.
+3. Restart `npm run dev`. The top bar changes from **Offline interpreter** to **AI interpreter**.
+
+`.env.local` is excluded from git; never commit or share it.
+
+### Production build
 
 ```bash
-cp .env.local.example .env.local   # then paste your key after ANTHROPIC_API_KEY=
+npm run build
+npm start
 ```
 
-Restart `npm run dev`. The pill in the top bar changes to **AI interpreter**.
+---
 
-## How it's built
+## Using it
 
-| Part | Where | AI? |
-|---|---|---|
-| Configuration schema (Zod) | `lib/schema.ts` | no |
-| Rules the engine can execute | `lib/rules.ts` | no |
-| Generative music engine (Tone.js) | `lib/engine/` | no |
-| "Your musical system" — plain-language, editable view of the config | `lib/describe.ts` | no |
-| Patch format the AI returns (only what changes) | `lib/interpret/patch.ts` | — |
-| Claude interpreter | `app/api/interpret/route.ts`, `lib/interpret/prompt.ts` | **yes** |
-| Offline fallback interpreter | `lib/interpret/offline.ts` | no |
-| Visuals driven by engine events | `components/Visualizer.tsx` | no |
-| Saving systems, seeds, recordings → WAV | `lib/storage.ts`, `lib/wav.ts`, `components/Library.tsx` | no |
+- **Simple mode** (default): pick a piece, press play, shape it with **Density**, **Evolution**, **Intensity** and **Unpredictability**, switch **Drums** on or off, and mix the layers.
+- **Advanced mode** (top bar): the style (Ambient · Phrases · Pulse), the Markov chains, key, scale, tempo, chord progression, per-layer details, melodies, rules, undo history.
+- **Library**: save a piece (the system itself), save a snapshot (system + seed, replays exactly), export/import JSON, record a performance to WAV.
+- **Shortcuts**: <kbd>Space</kbd> play/stop · <kbd>F</kbd> immersive · <kbd>Esc</kbd> leave immersive · <kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>⇧</kbd>+<kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> redo · <kbd>?</kbd> show all shortcuts.
 
-The AI only ever returns a validated **patch** (every field nullable; null = keep as is). The engine never waits on it, so the music keeps playing if the AI is slow or unavailable.
+## Credits
 
-### The engine
-
-- Each layer schedules its own notes; gaps come from density, pace, activity and unpredictability, with phrase-length rests.
-- Pitches are chosen from the scale, weighted toward the current chord and the previous note (or replayed from a remembered phrase, varied).
-- A slow chord progression moves by common root motions; pads re-voice smoothly.
-- A clash guard removes semitone rubs and crowding in the low end.
-- Evolution slowly random-walks each layer's activity, register and tone.
-- All events run in time order on a logical clock, so a fixed seed reproduces a performance exactly.
-
-### Notes & time (direct control)
-
-At the top of the right panel: key, tonality (real scale names), your own scale (tap notes on the keyboard), tempo in BPM, and pulse (free-floating ↔ every layer locked to one beat grid). Each layer also has its own speed (¼× to 3×) and an optional **melody** you draw on a grid: columns are beats, rows are steps up/down the scale. The engine anchors it on the current harmony, brings it back as often as you choose, and varies it with unpredictability.
-
-### Rules (creative constraints)
-
-Never more than N sounds · each sound quieter than the last · layers drift apart · a new instrument every N minutes · gradually less recognizable · melodies take turns · no notes above / below a line · higher notes become rarer.
-
-Anything else is reported as "not applied", never faked.
+- Piano: **Salamander Grand Piano** by Alexander Holm, CC BY 3.0, served from the Tone.js project.
+- Techniques: Brian Eno's tape-loop method (*Music for Airports*); Alex Bainter's phrase-level Markov chain (*Generating More of My Favorite Aphex Twin Track*, 2018); minimalist additive and interlocking patterns (Steve Reich). All musical material in DRIFT is original or public domain.
+- Built with Next.js, React, TypeScript, Tone.js, Zod, and the Anthropic API.
