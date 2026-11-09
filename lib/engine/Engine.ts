@@ -668,7 +668,9 @@ export class Engine {
     const erosion = this.ruleProgress("erode");
     const arcI = this.arcIntensity(this.playing ? this.clock : Tone.now());
     const arcOn = c.arc.shape !== "off" || c.engine.type === "composed";
-    const brightness = clamp(c.tone.brightness - erosion * 0.25 + (arcOn ? (arcI - 0.5) * 0.35 : 0));
+    // Intensity tilts the tone brighter (composed pieces fold it into the form instead)
+    const tilt = c.engine.type === "composed" ? 0 : (c.macro.intensity - 0.5) * 0.3;
+    const brightness = clamp(c.tone.brightness - erosion * 0.25 + (arcOn ? (arcI - 0.5) * 0.35 : 0) + tilt);
     // the arc also swells the overall level
     this.bus.gain.rampTo(arcOn ? 2.5 * (0.5 + 0.5 * arcI) : 2.5, ramp);
     this.masterFilter.frequency.rampTo(500 * Math.pow(2, brightness * 5.3), ramp);
@@ -1631,7 +1633,7 @@ export class Engine {
     const { min, max } = v.layer.durations;
     const dur = Math.max(1.5, min + (max - min) * this.rng()) * (0.7 + c.behavior.overlap * 0.6);
     const prom = v.layer.prominence === "leads" ? 1.15 : v.layer.prominence === "recedes" ? 0.75 : 1;
-    const vel = clamp((0.24 + 0.16 * this.rng()) * prom);
+    const vel = clamp((0.24 + 0.16 * this.rng()) * prom * (0.7 + 0.6 * c.macro.intensity));
     this.composedNote(v, toMidi(state), t, dur, vel);
   }
 

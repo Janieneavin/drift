@@ -21,7 +21,7 @@ import {
   registerLabel,
   summarize,
 } from "@/lib/describe";
-import { INSTRUMENT_GROUPS, INSTRUMENT_LABEL, roleFor } from "@/lib/presets";
+import { INSTRUMENT_GROUPS, INSTRUMENT_LABEL, PRESETS, roleFor } from "@/lib/presets";
 import { layer as makeLayer } from "@/lib/presets";
 import type { Fx } from "@/lib/schema";
 
@@ -44,9 +44,20 @@ interface Props {
   advanced: boolean;
   onHearTheme: (layerId: string) => void;
   lastMarkov: { from: number; to: number; at: number } | null;
+  onOpenPreset: (c: DriftConfig) => void;
 }
 
-export default function SystemPanel({ config, update, snapshot, playing, advanced, onHearTheme, lastMarkov }: Props) {
+/** A section that can be opened and closed (Advanced mode). */
+function Fold({ title, open, children }: { title: string; open?: boolean; children: React.ReactNode }) {
+  return (
+    <details className="fold" open={open}>
+      <summary>{title}</summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  );
+}
+
+export default function SystemPanel({ config, update, snapshot, playing, advanced, onHearTheme, lastMarkov, onOpenPreset }: Props) {
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const colorOf = (id: string, i: number) => {
@@ -55,24 +66,119 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
   };
   const runtime = snapshot?.layers.filter((l) => l.runtime) ?? [];
 
-  return (
-    <>
-      {config.engine.type === "ambient" && <MarkovPanel config={config} update={update} snapshot={snapshot} lastStep={lastMarkov} />}
-      {config.engine.type === "layers" && <ArcPanel config={config} update={update} snapshot={snapshot} />}
-      {config.engine.type === "composed" && (
+  /* ---------------- Simple mode: presets and layers, nothing else ---------------- */
+  if (!advanced) {
+    return (
+      <>
         <div className="section">
-          <p className="label">How this piece works</p>
-          <p className="hint" style={{ marginBottom: 0 }}>
-            A composed piece: a pulse motif and an interlocking motif over a repeating chord progression, a sustained pad and a low line. It moves through
-            <b> Beginning → Development → Expansion → Release</b> and starts again, subtly varied. Notes are added and removed one at a time; layers join and leave on bar
-            lines. Density sets how full each pattern gets, Evolution how long a cycle lasts and how much it varies, Intensity how full the peaks get.
-          </p>
-          <p className="hint" style={{ marginTop: 8, fontSize: 11 }}>
-            Piano: Salamander Grand Piano by Alexander Holm, CC BY 3.0 (a soft synth plays until it loads, or when offline).
+          <p className="label">Pieces</p>
+          <div className="preset-list">
+            {PRESETS.map((p) => (
+              <button key={p.name} className={`preset ${p.name === config.name ? "on" : ""}`} onClick={() => onOpenPreset(p)}>
+                <b>{p.name}</b>
+                <small>{p.engine.type === "composed" ? "Pulse" : "Ambient"} · {p.atmosphere}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="section">
+          <div className="row">
+            <p className="label" style={{ flex: 1, margin: 0 }}>
+              Layers
+            </p>
+            <button className="btn small" disabled={config.layers.length >= 6 && !adding} onClick={() => setAdding((a) => !a)}>
+              {adding ? "Close" : "+ Add"}
+            </button>
+          </div>
+          {adding && (
+            <AddLayer
+              count={config.layers.length}
+              onClose={() => setAdding(false)}
+              onAdd={(nl) => {
+                update((c) => void c.layers.push(nl));
+                setAdding(false);
+              }}
+            />
+          )}
+          {config.layers.map((l, i) => (
+            <div key={l.id} className={`simple-layer ${l.enabled ? "" : "off"}`}>
+              <span className="swatch" style={{ background: colorOf(l.id, i) }} />
+              <span className="simple-name" title={INSTRUMENT_LABEL[l.instrument]}>
+                {l.name}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={l.volume}
+                style={fill(l.volume)}
+                aria-label={`${l.name} volume`}
+                onChange={(e) =>
+                  update((c) => {
+                    const t = c.layers.find((x) => x.id === l.id);
+                    if (t) t.volume = Number(e.target.value);
+                  })
+                }
+              />
+              <button
+                className={`toggle ${l.enabled ? "on" : ""}`}
+                title={l.enabled ? "Mute this layer" : "Bring this layer back"}
+                onClick={() =>
+                  update((c) => {
+                    const t = c.layers.find((x) => x.id === l.id);
+                    if (t) t.enabled = !t.enabled;
+                  })
+                }
+              />
+            </div>
+          ))}
+          <p className="hint" style={{ marginTop: 10 }}>
+            Switch to <b>Advanced</b> (top bar) for the key, tempo, chord progression, Markov chain, melodies, rules and each layer&apos;s details.
           </p>
         </div>
+      </>
+    );
+  }
+
+  /* ---------------- Advanced mode: everything, in sections ---------------- */
+  const style = config.engine.type === "composed" ? "pulse" : config.engine.type === "ambient" ? "ambient" : "generative";
+  return (
+    <>
+      <Fold title="Style" open>
+        <div className="seg">
+          <button className={style === "ambient" ? "on" : ""} onClick={() => update((c) => (c.engine.type = "ambient"))}>
+            Ambient
+          </button>
+          <button className={style === "pulse" ? "on" : ""} onClick={() => update((c) => (c.engine.type = "composed"))}>
+            Pulse
+          </button>
+        </div>
+        <p className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
+          {style === "ambient"
+            ? "Ambient: each voice repeats over a slow loop of its own length; a Markov chain picks its notes. No beat unless you add drums."
+            : style === "pulse"
+              ? "Pulse: interlocking patterns on a shared beat over a repeating progression, cycling Beginning → Development → Expansion → Release."
+              : "Generative (older engine): independent layers improvising in phrases. Choose Ambient or Pulse to switch."}
+        </p>
+        <p className="hint" style={{ marginTop: 6, fontSize: 11 }}>
+          Piano: Salamander Grand Piano by Alexander Holm, CC BY 3.0 (a soft synth plays until it loads, or when offline).
+        </p>
+      </Fold>
+      {config.engine.type === "ambient" && (
+        <Fold title="Markov chain & loops" open>
+          <MarkovPanel config={config} update={update} snapshot={snapshot} lastStep={lastMarkov} />
+        </Fold>
       )}
-      {advanced && <NotesPanel config={config} update={update} chordIndex={snapshot?.chordIndex ?? -1} />}
+      {config.engine.type === "layers" && (
+        <Fold title="Shape over time">
+          <ArcPanel config={config} update={update} snapshot={snapshot} />
+        </Fold>
+      )}
+      <Fold title="Notes & time">
+        <NotesPanel config={config} update={update} chordIndex={snapshot?.chordIndex ?? -1} />
+      </Fold>
+      <Fold title="Your musical system">
       <div className="section">
         <p className="label">Your musical system</p>
         <ul className="summary">
@@ -108,7 +214,9 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
           );
         })}
       </div>
+      </Fold>
 
+      <Fold title="Layers" open>
       <div className="section">
         <div className="row">
           <p className="label" style={{ flex: 1, margin: 0 }}>
@@ -155,6 +263,7 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
           </div>
         ))}
       </div>
+      </Fold>
     </>
   );
 }

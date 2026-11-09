@@ -92,7 +92,7 @@ export default function Drift() {
 
   const [lastMarkov, setLastMarkov] = useState<{ from: number; to: number; at: number } | null>(null);
   const [pendingRule, setPendingRule] = useState<{ text: string; result: InterpretResult } | null>(null);
-  const [advanced, setAdvanced] = useState(true);
+  const [advanced, setAdvanced] = useState(false);
   useEffect(() => {
     try {
       const v = localStorage.getItem("drift.mode");
@@ -633,22 +633,35 @@ export default function Drift() {
           </div>
         </div>
 
-        <RulesPanel
-          config={config}
-          update={update}
-          snapshot={snapshot}
-          pulses={pulses}
-          onHover={setHoveredRule}
-          onAsk={(t) => ask("rule", t)}
-          busy={busy === "rule"}
-          pending={pendingRule}
-          onApplyPending={applyPendingRule}
-          onCancelPending={() => setPendingRule(null)}
-        />
+        {advanced && (
+          <details className="fold" open={config.rules.length > 0}>
+            <summary>Rules · how should it behave?</summary>
+            <div className="fold-body">
+              <RulesPanel
+                config={config}
+                update={update}
+                snapshot={snapshot}
+                pulses={pulses}
+                onHover={setHoveredRule}
+                onAsk={(t) => ask("rule", t)}
+                busy={busy === "rule"}
+                pending={pendingRule}
+                onApplyPending={applyPendingRule}
+                onCancelPending={() => setPendingRule(null)}
+              />
+            </div>
+          </details>
+        )}
 
         <div className="section">
           <h2 className="q">Direct it</h2>
           <p className="hint">Change the music while it plays. Only what you mention changes.</p>
+          {ai !== "ai" && (
+            <p className="hint offline-hint">
+              Without an AI key, this understands simple phrases: <i>slower · faster · 80 BPM · warmer · darker · more melancholic · more echo · sparser · add drums · add a violin ·
+              change the key to D · slow down the harmonic changes · build up</i>.
+            </p>
+          )}
           <div className="row">
             <input
               className="input"
@@ -703,7 +716,7 @@ export default function Drift() {
       </aside>
 
       <aside className={`panel right ${showSystem ? "" : "hidden"}`}>
-        <SystemPanel config={config} update={update} snapshot={snapshot} playing={playing} advanced={advanced} onHearTheme={(id) => engine?.playThemeNow(id)} lastMarkov={lastMarkov} />
+        <SystemPanel config={config} update={update} snapshot={snapshot} playing={playing} advanced={advanced} onHearTheme={(id) => engine?.playThemeNow(id)} lastMarkov={lastMarkov} onOpenPreset={(p) => open(structuredClone(p), null)} />
       </aside>
 
       {showLibrary && (
@@ -794,9 +807,9 @@ export default function Drift() {
         </button>
         {macro("density", "Density", "how many notes and layers")}
         {macro("evolution", "Evolution", "how quickly things change")}
-        {config.engine.type === "composed" && slider("Intensity", "how full the peaks get", config.macro.intensity, (c, v) => (c.macro.intensity = v))}
+        {slider("Intensity", "how bright and full it gets", config.macro.intensity, (c, v) => (c.macro.intensity = v))}
         {macro("unpredictability", "Unpredictability", "how loosely notes vary")}
-        {config.engine.type === "layers" && slider("Surprise", "how far it departs", config.behavior.surprises, (c, v) => (c.behavior.surprises = v))}
+
         {config.engine.type === "composed" && playing && snapshot?.phase && (
           <div className="form-status" title="The piece cycles through these four sections forever">
             {(["Beginning", "Development", "Expansion", "Release"] as const).map((p) => (
