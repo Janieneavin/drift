@@ -102,6 +102,8 @@ ${PATCH_SCHEMA}`;
     } else if (err instanceof Error) {
       detail = err.message;
     }
+    // shows in the terminal running DRIFT (never includes the key)
+    console.warn(`[drift] AI request failed (${mode}): ${detail.slice(0, 300)}`);
     return Response.json({ error: "ai_failed", detail }, { status });
   }
 }

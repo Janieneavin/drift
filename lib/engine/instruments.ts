@@ -92,7 +92,8 @@ export interface Source {
 const poly = (voice: unknown, opts: unknown): Poly => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const s = new Tone.PolySynth(voice as any, opts as never);
-  s.maxPolyphony = 16;
+  // long, overlapping ambient notes need room: 32 voices per instrument
+  s.maxPolyphony = 32;
   s.volume.value = -6;
   return s;
 };
