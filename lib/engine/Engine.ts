@@ -830,7 +830,8 @@ export class Engine {
       this.nextSilence = Math.max(t, this.silenceUntil) + -Math.log(Math.max(1e-6, this.rng())) / rate;
     });
 
-    if (!composed) consider(this.nextSurprise, () => {
+    // surprises (a deep swell, a shimmer, a gust…) belong in ambient pieces too
+    if (!composed || ambient) consider(this.nextSurprise, () => {
       const t = this.nextSurprise;
       const kinds = c.behavior.surpriseKinds;
       const rate0 = Math.max(0.0005, c.behavior.surprises * 0.03 * (0.4 + this.effectiveU()));

@@ -1,5 +1,4 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { ConfigSchema } from "@/lib/schema";
 import { AIPatchSchema } from "@/lib/interpret/patch";
@@ -8,6 +7,21 @@ import { SYSTEM_PROMPT } from "@/lib/interpret/prompt";
 export const runtime = "nodejs";
 
 const MODEL = "claude-opus-5-5";
+
+/** The patch format, as JSON Schema text for the prompt. */
+const PATCH_SCHEMA = JSON.stringify(z.toJSONSchema(AIPatchSchema));
+
+/** Pull the JSON object out of a reply, tolerating stray text or fences. */
+function extractJson(text: string): unknown {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+}
 
 const RequestSchema = z.object({
   mode: z.enum(["atmosphere", "direct", "rule"]),
@@ -37,31 +51,41 @@ export async function POST(req: Request) {
   const client = new Anthropic();
 
   // the engine never waits on this — a slow or failed call only means
-  // the music keeps playing as it was
-  try {
-    const response = await client.messages.parse(
-      {
-        model: MODEL,
-        max_tokens: 16000,
-        output_config: { effort: "low", format: zodOutputFormat(AIPatchSchema) },
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: `mode: ${mode}\n\nCurrent configuration (layer and rule ids are what you reference in edits):\n${JSON.stringify(config)}\n\nUser says: ${text}`,
-          },
-        ],
-      },
-      { timeout: 60_000 },
-    );
+  // the music keeps playing as it was.
+  //
+  // Claude answers with plain JSON (the API's strict output forms can't
+  // take a patch with this many optional fields); DRIFT validates the
+  // answer itself with Zod and asks once more if it doesn't fit.
+  const system = `${SYSTEM_PROMPT}
 
-    if (response.stop_reason === "refusal") {
-      return Response.json({ error: "refused", detail: "The AI declined this request." }, { status: 422 });
+## Output format
+Reply with exactly one JSON object and nothing else — no prose, no code fences.
+It must match this JSON Schema. Every key is required; use null for anything you are not changing, and [] for empty lists:
+${PATCH_SCHEMA}`;
+  const messages: Anthropic.MessageParam[] = [
+    {
+      role: "user",
+      content: `mode: ${mode}\n\nCurrent configuration (layer and rule ids are what you reference in edits):\n${JSON.stringify(config)}\n\nUser says: ${text}`,
+    },
+  ];
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await client.messages.create({ model: MODEL, max_tokens: 16000, output_config: { effort: "low" }, system, messages }, { timeout: 60_000 });
+      if (response.stop_reason === "refusal") {
+        return Response.json({ error: "refused", detail: "The AI declined this request." }, { status: 422 });
+      }
+      if (response.stop_reason === "max_tokens") {
+        return Response.json({ error: "bad_output", detail: "The AI response was incomplete." }, { status: 502 });
+      }
+      const textOut = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+      const json = extractJson(textOut);
+      const check = json === undefined ? null : AIPatchSchema.safeParse(json);
+      if (check?.success) return Response.json({ patch: check.data, model: MODEL });
+      // one correction round: show Claude what didn't fit
+      const problem = check ? z.prettifyError(check.error).slice(0, 1500) : "The reply was not a single JSON object.";
+      messages.push({ role: "assistant", content: response.content }, { role: "user", content: `That reply didn't match the schema:\n${problem}\nReply again with only the corrected JSON object.` });
     }
-    if (response.stop_reason === "max_tokens" || !response.parsed_output) {
-      return Response.json({ error: "bad_output", detail: "The AI response was incomplete." }, { status: 502 });
-    }
-    return Response.json({ patch: response.parsed_output, model: MODEL });
+    return Response.json({ error: "bad_output", detail: "The AI's answer didn't match DRIFT's format." }, { status: 502 });
   } catch (err) {
     let detail = "Unknown error";
     let status = 502;
