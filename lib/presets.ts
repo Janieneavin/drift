@@ -86,7 +86,77 @@ export const CITY_4AM: DriftConfig = ambient({
   ],
 });
 
+/* ------------------------------------------------------------------ */
+/* Letter Home — a written piano piece (original)                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One bar = 8 half-beat steps. A chord is [bass, three notes for the
+ * left hand]; the left hand walks up the chord on beats 2, 3 and 4 (or the
+ * bar splits between two chords). `mel` is [step in the bar, note] for the
+ * right hand. Notes are scale degrees: 0 = D3, 7 = D4, 14 = D5, negative = bass.
+ */
+type Ch = [number, number, number, number];
+const bar = (ch: Ch, mel: [number, number][], ch2?: Ch): number[][] => {
+  const s: number[][] = Array.from({ length: 8 }, () => []);
+  s[0].push(ch[0]);
+  if (ch2) {
+    s[2].push(ch[2]);
+    s[4].push(ch2[0]);
+    s[6].push(ch2[2]);
+  } else {
+    s[2].push(ch[1]);
+    s[4].push(ch[2]);
+    s[6].push(ch[3]);
+  }
+  for (const [at, d] of mel) s[at].push(d);
+  return s;
+};
+const written = (...bars: number[][][]) => bars.flat().map((n) => [...new Set(n)].sort((x, y) => x - y));
+
+const I: Ch = [-7, 0, 2, 4];
+const I_LOW: Ch = [-14, 0, 2, 4];
+const ii: Ch = [-6, 1, 3, 5];
+const iii: Ch = [-5, 2, 4, 6];
+const IV: Ch = [-4, 0, 3, 5];
+const V: Ch = [-3, 1, 4, 6];
+const V_LOW: Ch = [-10, 1, 4, 6];
+const vi: Ch = [-2, 0, 2, 5];
+
+const LETTER_HOME = [
+  // A — the tune
+  written(bar(I, [[0, 9], [4, 8], [6, 9]]), bar(vi, [[0, 11], [6, 9]]), bar(IV, [[0, 10], [4, 12], [6, 11]]), bar(V, [[0, 8]])),
+  // A′ — the tune again, coming home
+  written(bar(I, [[0, 9], [4, 8], [6, 9]]), bar(vi, [[0, 11], [6, 12]]), bar(IV, [[0, 12], [2, 11], [4, 10], [6, 8]], V), bar(I, [[0, 7]])),
+  // B — a falling sequence
+  written(bar(IV, [[0, 14], [6, 12]]), bar(V, [[0, 13], [6, 11]]), bar(iii, [[0, 11], [6, 9]]), bar(vi, [[0, 12], [4, 11], [6, 9]])),
+  // B′ — reaching back toward the tune
+  written(bar(IV, [[0, 14], [4, 15], [6, 14]]), bar(V, [[0, 13], [6, 11]]), bar(ii, [[0, 12], [4, 10], [6, 8]]), bar(V_LOW, [[0, 11], [6, 13]])),
+  // A, an octave higher
+  written(bar(I, [[0, 16], [4, 15], [6, 16]]), bar(vi, [[0, 18], [6, 16]]), bar(ii, [[0, 17], [4, 19], [6, 18]]), bar(IV, [[0, 17], [6, 14]])),
+  // A′, higher, and home
+  written(bar(I, [[0, 16], [4, 15], [6, 16]]), bar(vi, [[0, 18], [6, 19]]), bar(IV, [[0, 19], [2, 18], [4, 17], [6, 15]], V), bar(I_LOW, [[0, 14]])),
+  // interlude, leading back to the start
+  written(bar(vi, [[0, 14]]), bar(IV, [[0, 12]]), bar(I, [[0, 11], [6, 9]]), bar(V, [[0, 8], [4, 9], [6, 11]])),
+];
+
 export const PRESETS: DriftConfig[] = [
+  composed({
+    name: "Letter Home",
+    atmosphere: "A written piano piece: a simple, tender melody over a flowing left hand, with soft strings underneath. It plays as composed, section by section, and returns to the beginning.",
+    engine: { type: "phrase", version: 5 },
+    macro: { density: 1, evolution: 0.8, unpredictability: 0.25, intensity: 0.5 },
+    tempo: { bpm: 66, lock: 1, swing: 0 },
+    harmony: { root: "D", mode: "major", customScale: null, chromatic: false, progression: null, chordChange: 0.3, tension: 0.25 },
+    tone: { brightness: 0.45, warmth: 0.72 },
+    space: { reverb: 0.85, reverbMix: 0.4, echo: 0.05, echoTime: 0.9, echoFeedback: 0.2 },
+    behavior: { overlap: 0.6, memory: 0.6, silence: 0, surprises: 0, surpriseKinds: [] },
+    phrasebank: { builtIn: false, user: LETTER_HOME, mix: 0 },
+    layers: [
+      layer({ id: "piano", name: "Piano", role: "melody", instrument: "piano", register: { low: 3, high: 5 }, volume: 0.66, prominence: "leads" }),
+      layer({ id: "strings", name: "Soft strings", role: "pad", instrument: "strings", register: { low: 3, high: 4 }, volume: 0.16, prominence: "recedes" }),
+    ],
+  }),
   CITY_4AM,
   composed({
     name: "Endless Piano",

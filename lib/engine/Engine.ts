@@ -1744,8 +1744,11 @@ export class Engine {
         if (step === 0 || !v.pw) {
           // a new phrase: sometimes the last one again (identity), usually a fresh walk
           const prev = v.pw?.phrase ?? null;
-          const again = prev && this.rng() < (1 - c.macro.evolution) * 0.3;
-          const phrase = again ? prev : walk(this.rng, chain, prev?.endBass ?? null, corpus);
+          const mix = c.phrasebank.mix;
+          // played as written: the phrases follow one another in order
+          const follow = mix < 0.5 ? (prev && prev.original >= 0 ? (prev.original + 1) % corpus.length : prev ? null : 0) : null;
+          const again = prev && mix >= 0.05 && this.rng() < (1 - c.macro.evolution) * 0.3;
+          const phrase = again ? prev : walk(this.rng, chain, prev?.endBass ?? null, corpus, follow, mix);
           v.pw = { phrase, prev };
           if (k === 0) this.emit({ kind: "phrase", time: t, layerId: v.layer.id, original: phrase.original });
         }
@@ -1765,7 +1768,9 @@ export class Engine {
           if (!bass && step % 16 !== 0 && this.rng() > 0.55 + 0.45 * c.macro.density) continue;
           const accent = step % 8 === 0 ? 1 : 0.88;
           const prom = v.layer.prominence === "leads" ? 1.1 : v.layer.prominence === "recedes" ? 0.8 : 1;
-          const vel = clamp((bass ? 0.22 : 0.34) * accent * prom * (0.75 + 0.5 * c.macro.intensity) * (0.92 + this.rng() * 0.16));
+          // higher notes sing out, lower accompaniment stays soft, as a pianist plays
+          const shape = bass ? 1 : 0.7 + 0.3 * clamp(d / 10);
+          const vel = clamp((bass ? 0.22 : 0.34) * shape * accent * prom * (0.75 + 0.5 * c.macro.intensity) * (0.92 + this.rng() * 0.16));
           const when = t + gauss(this.rng) * 0.012 * u;
           this.composedNote(v, toMidi(d), when, half * (bass ? 14 : 5), vel);
           // pads follow the harmony the phrase's bass implies

@@ -138,21 +138,33 @@ export interface WalkedPhrase {
   original: number;
 }
 
-/** Walk the chain from the start state that follows `prevBass`. */
-export function walk(rng: () => number, chain: PhraseChain, prevBass: number | null, corpus: PhraseGrid[]): WalkedPhrase {
+/**
+ * Walk the chain from the start state that follows `prevBass`.
+ *
+ * `follow` names the phrase to begin from, and `mix` (0 … 1) is how freely
+ * the walk may switch to another phrase where they agree: 0 plays it exactly
+ * as written, 1 is the classic chain.
+ */
+export function walk(rng: () => number, chain: PhraseChain, prevBass: number | null, corpus: PhraseGrid[], follow: number | null = null, mix = 1): WalkedPhrase {
   const starts = [...chain.next.keys()].filter((k) => k.startsWith(START));
-  let state = starts.find((k) => k === `${START}|${prevBass ?? ""}`) ?? starts[Math.floor(rng() * starts.length)];
+  const startsInto = (pi: number) => starts.find((k) => [...(chain.next.get(k)?.keys() ?? [])].some((n) => chain.sources.get(n)?.includes(pi)));
+  let state = (follow !== null ? startsInto(follow) : undefined) ?? starts.find((k) => k === `${START}|${prevBass ?? ""}`) ?? starts[Math.floor(rng() * starts.length)];
+  // the phrases the walk is still faithful to
+  let current: number[] | null = follow !== null ? [follow] : null;
   const g: PhraseGrid = [];
   const sources: number[][] = [];
   let bass: number | null = null;
   for (let step = 0; step < PHRASE_STEPS; step++) {
     const options = chain.next.get(state);
     if (!options || !options.size) break;
-    let total = 0;
-    for (const v of options.values()) total += v;
+    const faithful = (k: string) => k === END || !current || (chain.sources.get(k) ?? []).some((i) => current!.includes(i));
+    const weighted = [...options].map(([k, v]) => [k, v * (faithful(k) ? 1 : mix)] as const);
+    let total = weighted.reduce((a, [, w]) => a + w, 0);
+    const pool = total > 0 ? weighted : [...options];
+    if (total <= 0) total = pool.reduce((a, [, w]) => a + w, 0);
     let r = rng() * total;
-    let chosen = [...options.keys()][0];
-    for (const [k, v] of options) {
+    let chosen = pool[0][0];
+    for (const [k, v] of pool) {
       r -= v;
       if (r <= 0) {
         chosen = k;
@@ -160,6 +172,9 @@ export function walk(rng: () => number, chain: PhraseChain, prevBass: number | n
       }
     }
     if (chosen === END) break;
+    const src = chain.sources.get(chosen) ?? [];
+    const kept = current ? src.filter((i) => current!.includes(i)) : src;
+    current = kept.length ? kept : src;
     const { notes } = parseState(chosen);
     g.push(notes);
     sources.push(chain.sources.get(chosen) ?? []);

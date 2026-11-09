@@ -66,6 +66,11 @@ export default function PhrasePanel({ config, update, snapshot }: Props) {
         {config.phrasebank.builtIn ? `DRIFT's ${BUILT_IN.length} phrases` : "DRIFT's phrases are off"}
         {config.phrasebank.user.length ? ` + ${config.phrasebank.user.length} of yours` : ""}. Write your own and the chain mixes them in.
       </p>
+      <div className="row" style={{ marginTop: 8 }}>
+        <span className="hint" style={{ margin: 0, minWidth: 70 }}>As written</span>
+        <input type="range" min={0} max={1} step={0.05} value={config.phrasebank.mix} style={{ flex: 1 }} aria-label="How freely the chain mixes phrases" onChange={(e) => update((c) => (c.phrasebank.mix = Number(e.target.value)))} />
+        <span className="hint" style={{ margin: 0, minWidth: 70, textAlign: "right" }}>Mixed freely</span>
+      </div>
       {config.phrasebank.user.map((g, i) => (
         <div key={i} className="row" style={{ marginTop: 4 }}>
           <span className="mono" style={{ fontSize: 11, flex: 1 }}>

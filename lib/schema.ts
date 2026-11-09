@@ -157,6 +157,8 @@ export const ConfigSchema = z.object({
   phrasebank: z.object({
     builtIn: z.boolean(),
     user: z.array(z.array(z.array(z.number().int().min(-14).max(21)).max(4)).length(32)).max(24),
+    /** 0 = play the phrases as written, in order; 1 = the chain mixes them freely. */
+    mix: z.number().min(0).max(1),
   }),
   /**
    * The Markov chain that picks notes in ambient pieces: 8×8 weights,
@@ -260,7 +262,9 @@ export function migrateConfig(raw: unknown): unknown {
   if (c.harmony && !("chromatic" in c.harmony)) c.harmony.chromatic = Array.isArray((c as { behavior?: { surpriseKinds?: string[] } }).behavior?.surpriseKinds) && ((c as { behavior: { surpriseKinds: string[] } }).behavior.surpriseKinds.includes("foreignNote"));
   if (!c.engine) c.engine = { type: "layers", version: ENGINE_VERSION };
   if (!("markov" in c)) (c as Record<string, unknown>).markov = null;
-  if (!("phrasebank" in c)) (c as Record<string, unknown>).phrasebank = { builtIn: true, user: [] };
+  if (!("phrasebank" in c)) (c as Record<string, unknown>).phrasebank = { builtIn: true, user: [], mix: 1 };
+  const bank = (c as { phrasebank?: Record<string, unknown> }).phrasebank;
+  if (bank && typeof bank.mix !== "number") bank.mix = 1;
   const mac = (c as { macro?: Record<string, number> }).macro;
   if (mac && typeof mac.intensity !== "number") mac.intensity = 0.5;
   if (c.harmony && !("progression" in c.harmony)) c.harmony.progression = null;
