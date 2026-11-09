@@ -25,6 +25,7 @@ export const TRIM: Record<Instrument, number> = {
   chip: 0.22,
   drums: 0.8,
   organ: 0.22,
+  rhodes: 0.7,
   piano: 0.9,
   marimba: 0.85,
 };
@@ -49,7 +50,8 @@ export const BASE_CUTOFF: Record<Instrument, number> = {
   chip: 5000,
   drums: 12000,
   organ: 4200,
-  piano: 7000,
+  rhodes: 3600,
+  piano: 4600,
   marimba: 3800,
 };
 
@@ -73,7 +75,8 @@ export const RELEASE_TAIL: Record<Instrument, number> = {
   chip: 0.3,
   drums: 0.6,
   organ: 0.8,
-  piano: 1.6,
+  rhodes: 2.6,
+  piano: 3.4,
   marimba: 0.9,
 };
 
@@ -136,10 +139,31 @@ export function makeSource(inst: Instrument): Source {
       });
       out = synth;
       break;
-    case "choir":
-      synth = poly(Tone.Synth, { oscillator: { type: "fatsawtooth", count: 3, spread: 18 }, envelope: { attack: 3, decay: 1, sustain: 0.8, release: 6 } });
-      out = synth;
+    case "choir": {
+      // soft "aah" voices: a slow swell, shaped by a vowel-like body
+      synth = poly(Tone.Synth, { oscillator: { type: "fatsawtooth", count: 3, spread: 16 }, envelope: { attack: 3.2, decay: 1, sustain: 0.8, release: 7 } });
+      const vowel = keep(new Tone.Filter({ type: "peaking", frequency: 850, Q: 1.4, gain: 5 }));
+      const breath = keep(new Tone.Filter({ type: "lowpass", frequency: 2200, rolloff: -24 }));
+      synth.chain(vowel, breath);
+      out = breath;
       break;
+    }
+    case "rhodes": {
+      // a warm electric piano: a soft bell-like tine over a round body, gently shimmering
+      synth = poly(Tone.FMSynth, {
+        harmonicity: 1,
+        modulationIndex: 2.4,
+        oscillator: { type: "sine" },
+        modulation: { type: "sine" },
+        envelope: { attack: 0.006, decay: 3.2, sustain: 0.22, release: 2.6 },
+        modulationEnvelope: { attack: 0.002, decay: 0.55, sustain: 0.08, release: 1 },
+      });
+      const shimmer = keep(new Tone.Tremolo({ frequency: 3.8, depth: 0.14 }).start());
+      const warm = keep(new Tone.Filter({ type: "lowpass", frequency: 3200, rolloff: -12 }));
+      synth.chain(shimmer, warm);
+      out = warm;
+      break;
+    }
     case "strings":
       synth = poly(Tone.Synth, { oscillator: { type: "fattriangle", count: 3, spread: 22 }, envelope: { attack: 2.2, decay: 1, sustain: 0.85, release: 5 } });
       const soft = keep(new Tone.Filter({ type: "lowpass", frequency: 1800, rolloff: -24 }));
@@ -257,7 +281,8 @@ export function makeSource(inst: Instrument): Source {
       let loaded = false;
       const urls: Record<string, string> = {};
       for (const n of ["A0", "C1", "D#1", "F#1", "A1", "C2", "D#2", "F#2", "A2", "C3", "D#3", "F#3", "A3", "C4", "D#4", "F#4", "A4", "C5", "D#5", "F#5", "A5", "C6", "D#6", "F#6", "A6", "C7"]) urls[n] = `${n.replace("#", "s")}.mp3`;
-      const sampler = new Tone.Sampler({ urls, baseUrl: "https://tonejs.github.io/audio/salamander/", release: 1.4, onload: () => (loaded = true), onerror: () => (loaded = false) });
+      // a long release, as if the sustain pedal were down
+      const sampler = new Tone.Sampler({ urls, baseUrl: "https://tonejs.github.io/audio/salamander/", release: 3.4, onload: () => (loaded = true), onerror: () => (loaded = false) });
       sampler.volume.value = -9;
       sampler.connect(mix);
       nodes.push(sampler);

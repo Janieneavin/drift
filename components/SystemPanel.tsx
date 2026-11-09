@@ -6,6 +6,7 @@ import ThemeEditor from "./ThemeEditor";
 import AddLayer from "./AddLayer";
 import ArcPanel from "./ArcPanel";
 import MarkovPanel from "./MarkovPanel";
+import PhrasePanel from "./PhrasePanel";
 import { fill } from "@/lib/ui";
 import type { DriftConfig, Layer } from "@/lib/schema";
 import { INSTRUMENTS } from "@/lib/schema";
@@ -76,7 +77,7 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
             {PRESETS.map((p) => (
               <button key={p.name} className={`preset ${p.name === config.name ? "on" : ""}`} onClick={() => onOpenPreset(p)}>
                 <b>{p.name}</b>
-                <small>{p.engine.type === "composed" ? "Pulse" : "Ambient"} · {p.atmosphere}</small>
+                <small>{p.engine.type === "composed" ? "Pulse" : p.engine.type === "phrase" ? "Phrases" : "Ambient"} · {p.atmosphere}</small>
               </button>
             ))}
           </div>
@@ -142,13 +143,16 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
   }
 
   /* ---------------- Advanced mode: everything, in sections ---------------- */
-  const style = config.engine.type === "composed" ? "pulse" : config.engine.type === "ambient" ? "ambient" : "generative";
+  const style = config.engine.type === "composed" ? "pulse" : config.engine.type === "ambient" ? "ambient" : config.engine.type === "phrase" ? "phrase" : "generative";
   return (
     <>
       <Fold title="Style" open>
         <div className="seg">
           <button className={style === "ambient" ? "on" : ""} onClick={() => update((c) => (c.engine.type = "ambient"))}>
             Ambient
+          </button>
+          <button className={style === "phrase" ? "on" : ""} onClick={() => update((c) => (c.engine.type = "phrase"))}>
+            Phrases
           </button>
           <button className={style === "pulse" ? "on" : ""} onClick={() => update((c) => (c.engine.type = "composed"))}>
             Pulse
@@ -157,7 +161,9 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
         <p className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
           {style === "ambient"
             ? "Ambient: each voice repeats over a slow loop of its own length; a Markov chain picks its notes. No beat unless you add drums."
-            : style === "pulse"
+            : style === "phrase"
+              ? "Phrases: a Markov chain over whole phrases (beat position + notes + bass) writes a new 16-beat piano phrase every few seconds, in the style of the phrases it learned."
+              : style === "pulse"
               ? "Pulse: interlocking patterns on a shared beat over a repeating progression, cycling Beginning → Development → Expansion → Release."
               : "Generative (older engine): independent layers improvising in phrases. Choose Ambient or Pulse to switch."}
         </p>
@@ -168,6 +174,11 @@ export default function SystemPanel({ config, update, snapshot, playing, advance
       {config.engine.type === "ambient" && (
         <Fold title="Markov chain & loops" open>
           <MarkovPanel config={config} update={update} snapshot={snapshot} lastStep={lastMarkov} />
+        </Fold>
+      )}
+      {config.engine.type === "phrase" && (
+        <Fold title="Phrase chain" open>
+          <PhrasePanel config={config} update={update} snapshot={snapshot} />
         </Fold>
       )}
       {config.engine.type === "layers" && (

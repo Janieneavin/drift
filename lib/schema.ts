@@ -43,6 +43,7 @@ export const INSTRUMENTS = [
   "drums", // drum machine (kick, snare, hats)
   "organ", // warm drawbar organ
   "piano", // sampled grand piano (synth fallback offline)
+  "rhodes", // warm electric piano
   "marimba", // soft wooden mallets
 ] as const;
 
@@ -147,7 +148,16 @@ export const ConfigSchema = z.object({
    * composed: one designed piece — interlocking patterns over a repeating
    * progression, with a built-in Beginning → Development → Expansion → Release form.
    */
-  engine: z.object({ type: z.enum(["layers", "composed", "ambient"]), version: z.number().int() }),
+  engine: z.object({ type: z.enum(["layers", "composed", "ambient", "phrase"]), version: z.number().int() }),
+  /**
+   * Phrases for the phrase chain (engine type "phrase"): DRIFT's own set
+   * and any the user writes. Each phrase is 32 half-beat steps of scale
+   * degrees (0 = home note, negative = below).
+   */
+  phrasebank: z.object({
+    builtIn: z.boolean(),
+    user: z.array(z.array(z.array(z.number().int().min(-14).max(21)).max(4)).length(32)).max(24),
+  }),
   /**
    * The Markov chain that picks notes in ambient pieces: 8×8 weights,
    * row = note just played (1 … 8), column = next note. null = learned
@@ -250,6 +260,7 @@ export function migrateConfig(raw: unknown): unknown {
   if (c.harmony && !("chromatic" in c.harmony)) c.harmony.chromatic = Array.isArray((c as { behavior?: { surpriseKinds?: string[] } }).behavior?.surpriseKinds) && ((c as { behavior: { surpriseKinds: string[] } }).behavior.surpriseKinds.includes("foreignNote"));
   if (!c.engine) c.engine = { type: "layers", version: ENGINE_VERSION };
   if (!("markov" in c)) (c as Record<string, unknown>).markov = null;
+  if (!("phrasebank" in c)) (c as Record<string, unknown>).phrasebank = { builtIn: true, user: [] };
   const mac = (c as { macro?: Record<string, number> }).macro;
   if (mac && typeof mac.intensity !== "number") mac.intensity = 0.5;
   if (c.harmony && !("progression" in c.harmony)) c.harmony.progression = null;

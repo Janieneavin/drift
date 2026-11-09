@@ -17,6 +17,7 @@ import {
 } from "../music";
 import { type MelodyNote, styleFor, varyPhrase, writePhrase } from "./corpus";
 import { type Matrix, learnedMatrix, nextState } from "./markov";
+import { BUILT_IN, PHRASE_STEPS, type PhraseChain, type PhraseGrid, type WalkedPhrase, buildChain, walk } from "./phrases";
 import { BASS, INTERLOCK, PROGRESSIONS, PULSE, type Phase, STEPS, additiveOrder, form, ladder, noteSteps } from "./composer";
 import { type Motif, type Phrase, answerPhrase, composePhrase, makeMotif, mutateMotif } from "./melody";
 import { BASE_CUTOFF, type DrumHit, type DrumKit, type FxUnit, RELEASE_TAIL, TRIM, makeFx, makeSource, type Poly } from "./instruments";
@@ -47,7 +48,8 @@ export type EngineEvent =
   | { kind: "layerLeave"; time: number; layerId: string; name: string }
   | { kind: "ruleFired"; time: number; ruleId: string }
   | { kind: "silence"; time: number; until: number }
-  | { kind: "markov"; time: number; layerId: string; from: number; to: number };
+  | { kind: "markov"; time: number; layerId: string; from: number; to: number }
+  | { kind: "phrase"; time: number; layerId: string; original: number };
 
 export interface LayerSnapshot {
   id: string;
@@ -79,6 +81,8 @@ export interface Snapshot {
   arc: { intensity: number; progress: number } | null;
   chordIndex: number;
   phase: string | null;
+  /** Phrase chain: the phrase the first piano is playing, step by step. */
+  phrase: { layerId: string; step: number; grid: PhraseGrid; sources: number[][]; original: number; states: number; corpus: number; possible: number } | null;
   /** Ambient loops: where each loop is in its cycle and its chain's current note. */
   loops: { id: string; length: number; position: number; state: number }[];
   quietLevel: number | null;
@@ -143,6 +147,8 @@ interface Voice {
   mplan: { notes: MelodyNote[]; startStep: number; end: number; last: boolean } | null;
   /** Ambient loop: its own length, the notes placed in it, and the chain's state. */
   amb: { length: number; start: number; slots: { offset: number; state: number }[]; index: number; pass: number; state: number; next: number } | null;
+  /** Phrase chain: the phrase being played and the one before. */
+  pw: { phrase: WalkedPhrase; prev: WalkedPhrase | null } | null;
 }
 
 interface Sounding {
@@ -198,6 +204,9 @@ export class Engine {
   private reverb!: Tone.Reverb;
   private reverbIn!: Tone.Gain;
   private delay!: Tone.FeedbackDelay;
+  private echoIn!: Tone.Gain;
+  private echoFeedback!: Tone.Gain;
+  private wobble!: Tone.Vibrato;
   private meter!: Tone.Meter;
   private recorder!: Tone.Recorder;
   private surpriseSynth!: Poly;
@@ -220,6 +229,9 @@ export class Engine {
   private startedAt = 0;
   private clock = 0; // logical time of the event being processed
   private progIndex = 0; // position in a fixed chord progression
+  /** The phrase chain's shared half-beat clock. */
+  private pclock = { time: 0, step: 0 };
+  private chainCache: { key: string; chain: PhraseChain; corpus: PhraseGrid[] } | null = null;
   /** The composed engine's state: pulse counter, form cycle, patterns. */
   private comp = {
     step: 0,
@@ -283,6 +295,7 @@ export class Engine {
     this.clock = now;
     this.progIndex = 0;
     this.arcStart = now;
+    this.pclock = { time: now + 0.3, step: 0 };
     this.comp = { step: 0, gridTime: now + 0.12, cycleStartBar: 0, cycleBars: this.cycleLength(), variant: 0, shift: 0, energy: 0.12, phase: "Beginning", orders: new Map(), on: new Set(), chordBar: 0 };
     this.sounding = [];
     this.pending = [];
@@ -457,6 +470,11 @@ export class Engine {
       soundingNotes: this.soundingNoteCount(now, false),
       arc: this.config.arc.shape === "off" && this.config.engine.type !== "composed" ? null : { intensity: this.arcIntensity(now), progress: this.arcProgress(now) },
       phase: this.config.engine.type === "composed" && this.playing ? this.comp.phase : null,
+      phrase: (() => {
+        const v = [...this.voices.values()].find((x) => x.pw);
+        if (!v || !v.pw || !this.chainCache) return null;
+        return { layerId: v.layer.id, step: ((this.pclock.step - 1) % PHRASE_STEPS + PHRASE_STEPS) % PHRASE_STEPS, grid: v.pw.phrase.grid, sources: v.pw.phrase.sources, original: v.pw.phrase.original, states: this.chainCache.chain.states, corpus: this.chainCache.corpus.length, possible: this.chainCache.chain.possible };
+      })(),
       loops: [...this.voices.values()].filter((v) => v.amb).map((v) => ({ id: v.layer.id, length: v.amb!.length, position: clamp((now - v.amb!.start) / v.amb!.length), state: v.amb!.state })),
       chordIndex: this.config.harmony.progression ? (this.progIndex - 1 + this.config.harmony.progression.degrees.length * 100) % this.config.harmony.progression.degrees.length : -1,
       quietLevel: this.rule("eachQuieter") ? this.quiet.level : null,
@@ -483,18 +501,30 @@ export class Engine {
     this.limiter = new Tone.Limiter(-1).connect(this.out);
     this.compressor = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.05, release: 0.4 }).connect(this.limiter);
     this.eq = new Tone.EQ3({ low: 0, mid: 0, high: 0 }).connect(this.compressor);
-    this.masterFilter = new Tone.Filter({ type: "lowpass", frequency: 9000, rolloff: -12, Q: 0.3 }).connect(this.eq);
+    // a slow, slight pitch drift on the whole mix, like tape (ambient pieces only)
+    this.wobble = new Tone.Vibrato({ frequency: 0.23, depth: 0.018, wet: 0 }).connect(this.eq);
+    this.masterFilter = new Tone.Filter({ type: "lowpass", frequency: 9000, rolloff: -12, Q: 0.3 }).connect(this.wobble);
     // headroom gain: individual layers are kept within 0..1, the bus lifts
     // the whole mix and the compressor/limiter keep peaks safe
     this.bus = new Tone.Gain(2.5).connect(this.masterFilter);
 
     this.reverbDecay = 2 + this.config.space.reverb * 14;
-    this.reverb = new Tone.Reverb({ decay: this.reverbDecay, preDelay: 0.04, wet: 1 }).connect(this.bus);
+    // the reverb is kept dark and clean: no rumble below, no fizz above
+    const verbLow = new Tone.Filter({ type: "highpass", frequency: 160, rolloff: -12 }).connect(this.bus);
+    const verbHigh = new Tone.Filter({ type: "lowpass", frequency: 5200, rolloff: -12 }).connect(verbLow);
+    this.reverb = new Tone.Reverb({ decay: this.reverbDecay, preDelay: 0.06, wet: 1 }).connect(verbHigh);
     this.reverbIn = new Tone.Gain(1).connect(this.reverb);
-    // echoTime goes up to 1.6s; the default maximum delay is only 1s
-    this.delay = new Tone.FeedbackDelay({ delayTime: this.config.space.echoTime, maxDelay: 2, feedback: this.config.space.echoFeedback, wet: 1 });
-    this.delay.connect(this.bus);
-    this.delay.connect(this.reverbIn);
+    // echoes like tape: each repeat darker than the last (the filter sits inside the feedback loop)
+    this.echoIn = new Tone.Gain(1);
+    this.delay = new Tone.FeedbackDelay({ delayTime: this.config.space.echoTime, maxDelay: 2, feedback: 0, wet: 1 });
+    const echoTone = new Tone.Filter({ type: "lowpass", frequency: 2600, rolloff: -12 });
+    this.echoFeedback = new Tone.Gain(this.config.space.echoFeedback);
+    this.echoIn.connect(this.delay);
+    this.delay.connect(echoTone);
+    echoTone.connect(this.echoFeedback);
+    this.echoFeedback.connect(this.delay);
+    echoTone.connect(this.bus);
+    echoTone.connect(this.reverbIn);
 
     this.meter = new Tone.Meter({ smoothing: 0.85 });
     this.out.connect(this.meter);
@@ -502,7 +532,7 @@ export class Engine {
     this.out.connect(this.recorder);
 
     // surprise instruments
-    this.surpriseOut = new Tone.Gain(0.7).connect(this.bus);
+    this.surpriseOut = new Tone.Gain(0.5).connect(this.bus);
     this.surpriseOut.connect(this.reverbIn);
     this.surpriseSynth = makeSynth("felt");
     this.surpriseSynth.connect(this.surpriseOut);
@@ -542,7 +572,7 @@ export class Engine {
     gain.connect(reverbSend);
     gain.connect(delaySend);
     reverbSend.connect(this.reverbIn);
-    delaySend.connect(this.delay);
+    delaySend.connect(this.echoIn);
     const v: Voice = {
       layer,
       runtime,
@@ -583,6 +613,7 @@ export class Engine {
       periodCycle: -1,
       mplan: null,
       amb: null,
+      pw: null,
     };
     if (this.phrased(v)) v.motifs = this.newMotifs(v);
     this.voices.set(layer.id, v);
@@ -672,7 +703,8 @@ export class Engine {
     const tilt = c.engine.type === "composed" ? 0 : (c.macro.intensity - 0.5) * 0.3;
     const brightness = clamp(c.tone.brightness - erosion * 0.25 + (arcOn ? (arcI - 0.5) * 0.35 : 0) + tilt);
     // the arc also swells the overall level
-    this.bus.gain.rampTo(arcOn ? 2.5 * (0.5 + 0.5 * arcI) : 2.5, ramp);
+    // ambient pieces are played softly, so their mix is lifted to a comfortable level
+    this.bus.gain.rampTo(arcOn ? 2.5 * (0.5 + 0.5 * arcI) : c.engine.type === "ambient" || c.engine.type === "phrase" ? 3.5 : 2.5, ramp);
     this.masterFilter.frequency.rampTo(500 * Math.pow(2, brightness * 5.3), ramp);
     this.eq.low.rampTo(-2 + c.tone.warmth * 6, ramp);
     this.eq.high.rampTo(2 - c.tone.warmth * 7, ramp);
@@ -684,7 +716,8 @@ export class Engine {
     }
     try {
       this.delay.delayTime.rampTo(clamp(c.space.echoTime, 0.05, 1.9), ramp);
-      this.delay.feedback.rampTo(clamp(c.space.echoFeedback, 0, 0.9), ramp);
+      this.echoFeedback.gain.rampTo(clamp(c.space.echoFeedback, 0, 0.85), ramp);
+      this.wobble.wet.rampTo(c.engine.type === "ambient" || c.engine.type === "phrase" ? 1 : 0, ramp);
     } catch (err) {
       console.warn("[drift] could not update echoes", err);
     }
@@ -793,12 +826,14 @@ export class Engine {
     };
     const c = this.config;
     const ambient = c.engine.type === "ambient";
-    const composed = c.engine.type === "composed" || ambient;
+    const phraseMode = c.engine.type === "phrase";
+    const composed = c.engine.type === "composed" || ambient || phraseMode;
+    if (phraseMode) consider(this.pclock.time, () => this.phraseStep());
     // the composed engine drives everything from one shared pulse
-    if (composed && !ambient) consider(this.comp.gridTime, () => this.composedStep());
+    if (composed && !ambient && !phraseMode) consider(this.comp.gridTime, () => this.composedStep());
     if (ambient) {
-      // the harmony still drifts slowly underneath (pads and the low line follow it)
-      consider(this.chord.next, () => this.changeChord(this.chord.next));
+      // a held drone underneath, moving only rarely
+      consider(this.chord.next, () => this.ambientHarmony(this.chord.next));
       for (const v of this.voices.values()) {
         if (v.layer.role === "pad" || v.layer.role === "bass" || v.kit || !v.layer.enabled) continue;
         if (!v.amb) this.ambientInit(v, Math.max(this.clock, Tone.now()));
@@ -1034,7 +1069,7 @@ export class Engine {
   /** Which layers are allowed to play, driven by density and evolution. */
   private updateActiveSet(): void {
     const list = [...this.voices.values()].filter((v) => v.layer.enabled);
-    if (this.config.engine.type === "composed" || this.config.engine.type === "ambient") {
+    if (this.config.engine.type !== "layers") {
       // the composer decides who plays; every enabled layer is available
       this.activeIds = new Set(list.map((v) => v.layer.id));
       return;
@@ -1551,29 +1586,62 @@ export class Engine {
    */
   private static LOOPS = [23.3, 17.9, 29.1, 31.7, 19.7, 37.3];
 
+  /**
+   * The pitch field of an ambient piece: up to five notes of the scale
+   * chosen so that no two are a semitone apart. Any combination of them
+   * sounds consonant — the property that lets Eno's loops overlap freely.
+   */
+  private pitchField(): number[] {
+    const scale = scaleOf(this.config.harmony);
+    const has = (n: number) => scale.includes(n);
+    const third = has(4) ? 4 : has(3) ? 3 : null;
+    // preference order: home, fifth, third, second, sixth/seventh, fourth
+    const prefs = [0, 7, third, 2, has(9) ? 9 : 10, has(10) && third === 3 ? 10 : 9, 5].filter((x): x is number => x !== null && has(x));
+    const field: number[] = [];
+    for (const n of [...prefs, ...scale]) {
+      if (field.length >= 5) break;
+      if (field.includes(n)) continue;
+      if (field.every((f) => { const d = Math.abs(f - n) % 12; return d !== 1 && d !== 11 && d !== 6; })) field.push(n);
+    }
+    return field.sort((a, b) => a - b);
+  }
+
+  /** Eight Markov states → eight notes of the field, rising from the layer's home note. */
+  private fieldLadder(v: Voice): number[] {
+    const field = this.pitchField();
+    const home = rootPc(this.config.harmony.root);
+    const lo = octaveLow(v.layer.register.low);
+    const centre = (lo + octaveHigh(v.layer.register.high)) / 2 - 4;
+    let tonic = lo + ((home - (lo % 12) + 12) % 12);
+    while (tonic + 12 <= centre) tonic += 12;
+    const out: number[] = [];
+    for (let o = 0; out.length < 8; o++) for (const f of field) if (out.length < 8) out.push(tonic + 12 * o + f);
+    return out;
+  }
+
   private ambientInit(v: Voice, now: number): void {
     const c = this.config;
     const loopVoices = [...this.voices.values()].filter((x) => x.layer.role !== "pad" && x.layer.role !== "bass" && !x.kit);
     const i = Math.max(0, loopVoices.indexOf(v));
     const length = Engine.LOOPS[i % Engine.LOOPS.length] * (60 / c.tempo.bpm) * (i >= Engine.LOOPS.length ? 1.13 : 1);
-    // a few notes placed at fixed points in the loop, well apart
-    const count = clamp(Math.round(1 + v.layer.activity * 3 * (0.5 + c.macro.density)), 1, 5);
+    // a short phrase of 1–3 notes, close together, then a long silence until
+    // the loop comes round again — like a fragment on a tape loop
+    const count = clamp(Math.round(2 + v.layer.activity * 2 * (0.3 + c.macro.density)), 1, 4);
     const offsets: number[] = [];
-    for (let tries = 0; offsets.length < count && tries < 60; tries++) {
-      const o = 0.3 + this.rng() * (length - 2.5);
-      if (offsets.every((x) => Math.abs(x - o) > Math.min(3, length / (count + 1)))) offsets.push(o);
+    let at = 0.3 + this.rng() * 1.5;
+    for (let k = 0; k < count && at < length - 3; k++) {
+      offsets.push(at);
+      at += 1.6 + this.rng() * 2.6;
     }
-    offsets.sort((a, b) => a - b);
-    // every loop opens with a note straight away, so nothing waits in silence
-    if (offsets.length && offsets[0] > 2) offsets[0] = 0.3 + this.rng() * 1.5;
-    // the first notes come from the chain too
+    // the Markov chain writes the phrase
     const m = this.markovMatrix();
-    let state = this.rng() < 0.5 ? 0 : 4;
-    const slots = offsets.map((offset) => {
-      state = nextState(this.rng, m, state);
+    // each loop begins on a different note of the field, so together they make a chord
+    let state = [0, 4, 2, 5, 3, 1][i % 6];
+    const slots = offsets.map((offset, k) => {
+      if (k > 0) state = nextState(this.rng, m, state);
       return { offset, state };
     });
-    const start = now + 0.5 + i * 1.7;
+    const start = now + 0.5 + i * 2.3;
     v.amb = { length, start, slots, index: 0, pass: 0, state: slots[0]?.state ?? 0, next: start + (slots[0]?.offset ?? 0) };
   }
 
@@ -1581,23 +1649,17 @@ export class Engine {
     const a = v.amb!;
     const c = this.config;
     const slot = a.slots[a.index];
-    // loose, human timing: the more unpredictable, the more each note breathes
-    const t = a.start + slot.offset + gauss(this.rng) * 0.25 * this.effectiveU();
+    // a breath of human timing, never enough to blur the loop
+    const t = a.start + slot.offset + gauss(this.rng) * 0.08 * this.effectiveU();
     try {
-      // each time round the loop, some notes are chosen afresh by the chain;
-      // the rest repeat, like a tape loop. Evolution decides how many change.
-      if (a.index === 0 && a.pass > 0) {
+      // the loop repeats exactly; only now and then (Evolution) does the
+      // chain rewrite a single note of the phrase
+      if (a.index === 0 && a.pass > 0 && this.rng() < c.macro.evolution * 0.3) {
         const m = this.markovMatrix();
-        let prev = a.slots[a.slots.length - 1].state;
-        for (const s of a.slots) {
-          if (this.rng() < 0.15 + 0.6 * c.macro.evolution) {
-            const from = prev;
-            // Unpredictability: now and then the chain is ignored for a fresh note
-            s.state = this.rng() < this.effectiveU() * 0.2 ? Math.floor(this.rng() * 8) : nextState(this.rng, m, prev);
-            this.emit({ kind: "markov", time: a.start + s.offset, layerId: v.layer.id, from, to: s.state });
-          }
-          prev = s.state;
-        }
+        const k = Math.floor(this.rng() * a.slots.length);
+        const from = k > 0 ? a.slots[k - 1].state : a.slots[a.slots.length - 1].state;
+        a.slots[k].state = nextState(this.rng, m, from);
+        this.emit({ kind: "markov", time: a.start + a.slots[k].offset, layerId: v.layer.id, from, to: a.slots[k].state });
       }
       a.state = slot.state;
       this.ambientNote(v, slot, t);
@@ -1614,28 +1676,114 @@ export class Engine {
 
   private ambientNote(v: Voice, slot: { offset: number; state: number }, t: number): void {
     const c = this.config;
-    const scale = scaleOf(c.harmony);
-    const home = rootPc(c.harmony.root);
-    const lo = octaveLow(v.layer.register.low);
-    const centre = (lo + octaveHigh(v.layer.register.high)) / 2 - 4;
-    let tonic = lo + ((home - (lo % 12) + 12) % 12);
-    while (tonic + 12 <= centre) tonic += 12;
-    const toMidi = (st: number) => (st >= 7 ? tonic + 12 : tonic + scale[st % scale.length] + 12 * Math.floor(st / scale.length));
-    // never rub a semitone against something already sounding: ask the chain again
-    const others = this.sounding.filter((s) => s.layerId !== v.layer.id && s.fullEnd > t);
-    let state = slot.state;
-    for (let tries = 0; tries < 4; tries++) {
-      const m = toMidi(state);
-      if (others.every((s) => Math.abs(((m - s.midi) % 12 + 12) % 12) !== 1 && Math.abs(((m - s.midi) % 12 + 12) % 12) !== 11)) break;
-      state = nextState(this.rng, this.markovMatrix(), state);
-      if (tries === 3) return; // leave a space instead
-    }
-    slot.state = state;
+    const ladder = this.fieldLadder(v);
+    const midi = ladder[Math.max(0, Math.min(ladder.length - 1, slot.state))];
     const { min, max } = v.layer.durations;
-    const dur = Math.max(1.5, min + (max - min) * this.rng()) * (0.7 + c.behavior.overlap * 0.6);
+    // long, overlapping notes: the reverb and the loops do the rest
+    const dur = Math.max(2.5, min + (max - min) * this.rng()) * (0.8 + c.behavior.overlap * 0.6);
     const prom = v.layer.prominence === "leads" ? 1.15 : v.layer.prominence === "recedes" ? 0.75 : 1;
-    const vel = clamp((0.24 + 0.16 * this.rng()) * prom * (0.7 + 0.6 * c.macro.intensity));
-    this.composedNote(v, toMidi(state), t, dur, vel);
+    // played softly, never twice at exactly the same strength
+    const vel = clamp((0.16 + 0.12 * this.rng()) * prom * (0.75 + 0.5 * c.macro.intensity));
+    this.composedNote(v, midi, t, dur, vel);
+  }
+
+  /**
+   * Ambient harmony: a held drone built from the pitch field, which moves
+   * only rarely, to a neighbouring centre and back.
+   */
+  private ambientHarmony(time: number): void {
+    const c = this.config;
+    const field = this.pitchField();
+    const home = rootPc(c.harmony.root);
+    // centres: home most of the time, occasionally the fifth or the sixth/fourth
+    const centres = [0, field.includes(9) ? 9 : field.includes(10) ? 10 : 5, 7].filter((x) => x === 0 || field.includes(x) || x === 5);
+    const prevRoot = this.chord.pcs.length ? this.chord.pcs[0] : home;
+    const atHome = prevRoot === home;
+    const centre = this.chord.pcs.length === 0 || !atHome ? 0 : centres[1 + Math.floor(this.rng() * (centres.length - 1))];
+    // a drone voicing: the centre, its fifth, and one colour note from the field
+    const root = (home + centre) % 12;
+    const fifth = (root + 7) % 12;
+    const colour = field.map((f) => (home + f) % 12).find((pc) => pc !== root && pc !== fifth && Math.abs(((pc - root + 12) % 12) - 6) > 1) ?? root;
+    const pcs = [root, fifth, colour];
+    const len = (atHome ? 75 + this.rng() * 70 : 30 + this.rng() * 25) * (1.3 - c.macro.evolution * 0.6);
+    this.chord = { degree: centre, pcs, next: time + len };
+    this.emit({ kind: "chord", time, pcs });
+    for (const v of this.voices.values()) {
+      if (!v.layer.enabled) continue;
+      if (v.layer.role === "pad") this.playPad(v, time, len);
+      else if (v.layer.role === "bass") {
+        const lo = octaveLow(Math.max(1, Math.min(2, v.layer.register.low)));
+        const midi = lo + ((root - (lo % 12) + 12) % 12);
+        this.composedNote(v, midi, time + 0.5, Math.min(len, 14), 0.3 * (0.75 + 0.5 * c.macro.intensity));
+      }
+    }
+  }
+
+  /* ---------------- phrase chain ---------------- */
+
+  /** The chain, rebuilt only when the phrase bank changes. */
+  private phraseChain(): { chain: PhraseChain; corpus: PhraseGrid[] } {
+    const bank = this.config.phrasebank;
+    const corpus = [...(bank.builtIn || !bank.user.length ? BUILT_IN.map((p) => p.grid) : []), ...bank.user];
+    const key = JSON.stringify(corpus);
+    if (!this.chainCache || this.chainCache.key !== key) this.chainCache = { key, chain: buildChain(corpus), corpus };
+    return this.chainCache;
+  }
+
+  /** One half-beat of the phrase chain: every piano layer plays its walked phrase. */
+  private phraseStep(): void {
+    const c = this.config;
+    const half = 60 / c.tempo.bpm / 2;
+    const t = this.pclock.time;
+    const step = this.pclock.step % PHRASE_STEPS;
+    try {
+      const { chain, corpus } = this.phraseChain();
+      const pianos = [...this.voices.values()].filter((v) => v.layer.role !== "pad" && v.layer.role !== "bass" && !v.kit);
+      const u = this.effectiveU();
+      pianos.forEach((v, k) => {
+        if (step === 0 || !v.pw) {
+          // a new phrase: sometimes the last one again (identity), usually a fresh walk
+          const prev = v.pw?.phrase ?? null;
+          const again = prev && this.rng() < (1 - c.macro.evolution) * 0.3;
+          const phrase = again ? prev : walk(this.rng, chain, prev?.endBass ?? null, corpus);
+          v.pw = { phrase, prev };
+          if (k === 0) this.emit({ kind: "phrase", time: t, layerId: v.layer.id, original: phrase.original });
+        }
+        if (!v.layer.enabled) return;
+        const notes = v.pw.phrase.grid[step] ?? [];
+        if (!notes.length) return;
+        const scale = scaleOf(c.harmony);
+        const home = rootPc(c.harmony.root);
+        const lo = octaveLow(v.layer.register.low);
+        const tonic = lo + ((home - (lo % 12) + 12) % 12) + 12 * k; // later pianos sit an octave higher
+        const toMidi = (d: number) => tonic + scale[((d % scale.length) + scale.length) % scale.length] + 12 * Math.floor(d / scale.length);
+        for (const d of notes) {
+          const bass = d < 0;
+          // a second piano only echoes the melody, sparsely
+          if (k > 0 && (bass || this.rng() > 0.55)) continue;
+          // Density thins the melody (the bass and the downbeats always stay)
+          if (!bass && step % 16 !== 0 && this.rng() > 0.55 + 0.45 * c.macro.density) continue;
+          const accent = step % 8 === 0 ? 1 : 0.88;
+          const prom = v.layer.prominence === "leads" ? 1.1 : v.layer.prominence === "recedes" ? 0.8 : 1;
+          const vel = clamp((bass ? 0.22 : 0.34) * accent * prom * (0.75 + 0.5 * c.macro.intensity) * (0.92 + this.rng() * 0.16));
+          const when = t + gauss(this.rng) * 0.012 * u;
+          this.composedNote(v, toMidi(d), when, half * (bass ? 14 : 5), vel);
+          // pads follow the harmony the phrase's bass implies
+          if (bass && k === 0) this.phraseHarmony(((d % 7) + 7) % 7, t, half * 16);
+        }
+      });
+    } finally {
+      this.pclock.step++;
+      this.pclock.time = t + half;
+    }
+  }
+
+  private phraseHarmony(degree: number, time: number, len: number): void {
+    const c = this.config;
+    const pcs = chordPcs(c.harmony.root, scaleOf(c.harmony), degree, c.harmony.tension * 0.6);
+    this.chord = { degree, pcs, next: Infinity };
+    this.emit({ kind: "chord", time, pcs });
+    for (const v of this.voices.values()) if (v.layer.enabled && v.layer.role === "pad") this.playPad(v, time, len);
   }
 
   /* ---------------- composed engine ---------------- */

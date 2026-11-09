@@ -4,6 +4,9 @@ import { PRESETS, layer as makeLayer } from "../presets";
 import { PROGRESSIONS } from "../engine/composer";
 
 /** The progression a composed piece uses when none is set (mirrors the engine). */
+/** Look presets up by name, so adding one never shifts the others. */
+const byName = (name: string) => PRESETS.find((p) => p.name === name) ?? PRESETS[0];
+
 function defaultProgression(mode: DriftConfig["harmony"]["mode"]): number[] {
   return ["minor", "phrygian", "minorPentatonic", "japanese"].includes(mode) ? PROGRESSIONS.minor : ["dorian", "wholeTone"].includes(mode) ? PROGRESSIONS.modal : PROGRESSIONS.major;
 }
@@ -258,13 +261,15 @@ export function interpretOffline(mode: InterpretMode, text: string, current: Dri
   if (mode === "atmosphere") {
     const score = (words: string[]) => words.filter((w) => t.includes(w)).length;
     const candidates: [DriftConfig, number][] = [
-      [PRESETS[0], score(["city", "street", "night", "4 a.m", "empty", "cold", "urban", "nostalg", "rain"])],
-      [PRESETS[1], score(["cathedral", "church", "light", "sun", "holy", "stone", "abandon", "dust", "temple"])],
-      [PRESETS[2], score(["summer", "warm", "evening", "unsettl", "uneasy", "heat", "garden", "dusk"])],
-      [PRESETS[3], score(["water", "ocean", "sea", "float", "submerg", "deep", "swim", "tide"])],
-      [PRESETS[4], score(["electronic", "neon", "techno", "club", "drive", "synth", "beat", "dance", "cyber", "rave"])],
-      [PRESETS[5], score(["orchestra", "violin", "cello", "strings", "symphon", "cinematic", "film", "classical", "dawn"])],
-      [PRESETS[6], score(["expansive", "bittersweet", "climax", "build", "anthem", "ship", "vast", "progression", "swell", "epic", "uplifting"])],
+      [byName("Endless Piano"), score(["piano", "endless", "solo", "phrase", "aphex", "quiet piano", "study", "focus"])],
+      [byName("Departures"), score(["airport", "lounge", "waiting", "calm", "spacious", "unhurried", "eno", "ambient", "peaceful"])],
+      [byName("City at 4 A.M."), score(["city", "street", "night", "4 a.m", "empty", "cold", "urban", "nostalg", "rain"])],
+      [byName("Abandoned Cathedral"), score(["cathedral", "church", "light", "sun", "holy", "stone", "abandon", "dust", "temple"])],
+      [byName("Uneasy Summer Evening"), score(["summer", "warm", "evening", "unsettl", "uneasy", "heat", "garden", "dusk"])],
+      [byName("Underwater"), score(["water", "ocean", "sea", "float", "submerg", "deep", "swim", "tide"])],
+      [byName("Night Drive"), score(["electronic", "neon", "techno", "club", "drive", "synth", "beat", "dance", "cyber", "rave"])],
+      [byName("Orchestral Dawn"), score(["orchestra", "violin", "cello", "strings", "symphon", "cinematic", "film", "classical", "dawn"])],
+      [byName("Great Vessel"), score(["expansive", "bittersweet", "climax", "build", "anthem", "ship", "vast", "progression", "swell", "epic", "uplifting"])],
     ];
     candidates.sort((a, b) => b[1] - a[1]);
     const base = candidates[0][0];

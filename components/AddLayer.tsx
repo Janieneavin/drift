@@ -34,6 +34,7 @@ const SOUND_HINT: Record<Instrument, string> = {
   drums: "drum machine",
   organ: "warm organ",
   piano: "real grand piano",
+  rhodes: "warm electric piano",
   marimba: "soft mallets",
 };
 

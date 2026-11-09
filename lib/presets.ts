@@ -76,16 +76,50 @@ export const CITY_4AM: DriftConfig = ambient({
   tone: { brightness: 0.38, warmth: 0.65 },
   markov: null, // learned from real melodies
   layers: [
-    loopVoice("near", "Piano, near", "piano", 4, 5, { volume: 0.55, pan: -0.2, activity: 0.5 }),
-    loopVoice("far", "Piano, far away", "piano", 5, 6, { volume: 0.38, pan: 0.4, prominence: "recedes", activity: 0.4 }),
-    loopVoice("voices", "Voices", "choir", 4, 5, { volume: 0.32, durations: { min: 6, max: 10 }, activity: 0.3 }),
-    layer({ id: "haze", name: "String haze", role: "pad", instrument: "strings", register: { low: 3, high: 4 }, volume: 0.3, prominence: "recedes" }),
-    layer({ id: "hum", name: "Low hum", role: "bass", instrument: "sub", register: { low: 2, high: 2 }, volume: 0.38, durations: { min: 6, max: 12 } }),
+    loopVoice("near", "Piano, near", "piano", 4, 5, { volume: 0.55, pan: -0.2, activity: 0.55, durations: { min: 4, max: 8 } }),
+    loopVoice("far", "Piano, far away", "piano", 5, 6, { volume: 0.36, pan: 0.4, prominence: "recedes", activity: 0.35, durations: { min: 4, max: 8 } }),
+    loopVoice("voices", "Voices", "choir", 4, 5, { volume: 0.3, durations: { min: 8, max: 12 }, activity: 0.25 }),
+    loopVoice("keys", "Electric piano", "rhodes", 3, 4, { volume: 0.34, pan: 0.1, prominence: "recedes", activity: 0.3, durations: { min: 4, max: 7 } }),
+    layer({ id: "haze", name: "String drone", role: "pad", instrument: "strings", register: { low: 3, high: 4 }, volume: 0.24, prominence: "recedes" }),
+    layer({ id: "hum", name: "Low hum", role: "bass", instrument: "sub", register: { low: 2, high: 2 }, volume: 0.34, durations: { min: 8, max: 14 } }),
+  
   ],
 });
 
 export const PRESETS: DriftConfig[] = [
   CITY_4AM,
+  composed({
+    name: "Endless Piano",
+    atmosphere: "A quiet piano piece that never ends: new phrases written one after another by a Markov chain, each sounding like it belongs.",
+    engine: { type: "phrase", version: 5 },
+    macro: { density: 0.7, evolution: 0.5, unpredictability: 0.35, intensity: 0.5 },
+    tempo: { bpm: 92, lock: 1, swing: 0 },
+    harmony: { root: "D", mode: "major", customScale: null, chromatic: false, progression: null, chordChange: 0.3, tension: 0.4 },
+    tone: { brightness: 0.45, warmth: 0.68 },
+    space: { reverb: 0.85, reverbMix: 0.45, echo: 0.12, echoTime: 0.65, echoFeedback: 0.3 },
+    behavior: { overlap: 0.6, memory: 0.6, silence: 0, surprises: 0, surpriseKinds: [] },
+    layers: [
+      layer({ id: "piano", name: "Piano", role: "melody", instrument: "piano", register: { low: 3, high: 5 }, volume: 0.62, prominence: "leads" }),
+      layer({ id: "echo", name: "High piano", role: "melody", instrument: "piano", register: { low: 3, high: 5 }, volume: 0.3, pan: 0.35, prominence: "recedes" }),
+      layer({ id: "voices", name: "Soft voices", role: "pad", instrument: "choir", register: { low: 3, high: 4 }, volume: 0.2, prominence: "recedes", enabled: false }),
+    ],
+  }),
+  ambient({
+    name: "Departures",
+    atmosphere: "An empty airport lounge at dawn: calm, spacious, unhurried — music for waiting and thinking.",
+    macro: { density: 0.3, evolution: 0.25, unpredictability: 0.3, intensity: 0.45 },
+    harmony: { root: "F", mode: "major", customScale: null, chromatic: false, progression: null, chordChange: 0.15, tension: 0.35 },
+    tone: { brightness: 0.4, warmth: 0.7 },
+    space: { reverb: 1, reverbMix: 0.58, echo: 0.25, echoTime: 1.05, echoFeedback: 0.38 },
+    markov: { preset: "consonant", matrix: presetMatrix("consonant") },
+    layers: [
+      loopVoice("piano", "Piano", "piano", 4, 5, { volume: 0.55, pan: -0.15, activity: 0.5, durations: { min: 5, max: 9 } }),
+      loopVoice("piano2", "Second piano", "piano", 5, 5, { volume: 0.38, pan: 0.35, activity: 0.3, durations: { min: 5, max: 9 }, prominence: "recedes" }),
+      loopVoice("voices", "Voices", "choir", 4, 5, { volume: 0.3, activity: 0.2, durations: { min: 9, max: 13 } }),
+      loopVoice("low", "Low voices", "choir", 3, 3, { volume: 0.26, activity: 0.15, durations: { min: 10, max: 14 }, prominence: "recedes" }),
+      layer({ id: "air", name: "Air", role: "pad", instrument: "strings", register: { low: 3, high: 3 }, volume: 0.2, prominence: "recedes" }),
+    ],
+  }),
   ambient({
     name: "Abandoned Cathedral",
     atmosphere: "Sunlight filtering through an abandoned cathedral.",
@@ -96,7 +130,7 @@ export const PRESETS: DriftConfig[] = [
     markov: { preset: "consonant", matrix: presetMatrix("consonant") },
     layers: [
       loopVoice("harp", "Harp", "harp", 4, 5, { volume: 0.5, pan: -0.3 }),
-      loopVoice("flute", "Flute", "flute", 5, 6, { volume: 0.38, pan: 0.25, durations: { min: 3, max: 6 }, activity: 0.35 }),
+      loopVoice("keys", "Electric piano", "rhodes", 4, 5, { volume: 0.36, pan: 0.25, durations: { min: 4, max: 7 }, activity: 0.35 }),
       loopVoice("choir", "Choir", "choir", 4, 5, { volume: 0.3, durations: { min: 7, max: 12 }, activity: 0.3 }),
       layer({ id: "organ", name: "Stone organ", role: "pad", instrument: "organ", register: { low: 3, high: 4 }, volume: 0.28, prominence: "recedes" }),
       layer({ id: "cello", name: "Cello", role: "bass", instrument: "cello", register: { low: 2, high: 3 }, volume: 0.38, durations: { min: 5, max: 10 } }),
@@ -112,8 +146,8 @@ export const PRESETS: DriftConfig[] = [
     markov: null,
     layers: [
       loopVoice("keys", "Piano", "piano", 4, 5, { volume: 0.52, pan: -0.25 }),
-      loopVoice("cello", "Cello line", "cello", 3, 4, { volume: 0.4, durations: { min: 4, max: 8 }, activity: 0.35 }),
-      loopVoice("insects", "Cicada pluck", "pluck", 5, 6, { volume: 0.3, pan: 0.45, durations: { min: 1, max: 2 }, activity: 0.6 }),
+      loopVoice("keys", "Electric piano", "rhodes", 3, 4, { volume: 0.38, durations: { min: 4, max: 8 }, activity: 0.35 }),
+      loopVoice("insects", "Harp", "harp", 5, 6, { volume: 0.3, pan: 0.45, durations: { min: 2, max: 4 }, activity: 0.45 }),
       layer({ id: "haze", name: "Warm strings", role: "pad", instrument: "strings", register: { low: 3, high: 4 }, volume: 0.3 }),
       layer({ id: "deep", name: "Heavy air", role: "bass", instrument: "sub", register: { low: 2, high: 2 }, volume: 0.36, durations: { min: 6, max: 12 } }),
     ],
@@ -127,8 +161,8 @@ export const PRESETS: DriftConfig[] = [
     space: { reverb: 0.98, reverbMix: 0.6, echo: 0.45, echoTime: 1.2, echoFeedback: 0.5 },
     markov: { preset: "stepwise", matrix: presetMatrix("stepwise") },
     layers: [
-      loopVoice("drops", "Glass drops", "glass", 4, 5, { volume: 0.42, pan: 0.3 }),
-      loopVoice("above", "Distant flute", "flute", 4, 5, { volume: 0.34, prominence: "recedes", activity: 0.3 }),
+      loopVoice("drops", "Electric piano", "rhodes", 4, 5, { volume: 0.42, pan: 0.3, durations: { min: 4, max: 8 } }),
+      loopVoice("above", "Distant voices", "choir", 4, 5, { volume: 0.28, prominence: "recedes", activity: 0.3, durations: { min: 8, max: 12 } }),
       loopVoice("light", "Light above", "harp", 5, 6, { volume: 0.3, pan: -0.35, activity: 0.35 }),
       layer({ id: "current", name: "Current", role: "pad", instrument: "air", register: { low: 3, high: 4 }, volume: 0.38 }),
       layer({ id: "deep", name: "Deep call", role: "bass", instrument: "sub", register: { low: 1, high: 2 }, volume: 0.42, durations: { min: 6, max: 12 } }),
@@ -289,11 +323,12 @@ export const INSTRUMENT_LABEL: Record<(typeof INSTRUMENTS)[number], string> = {
   drums: "drum machine",
   organ: "organ",
   piano: "grand piano",
+  rhodes: "electric piano",
   marimba: "marimba",
 };
 
 export const INSTRUMENT_GROUPS: { label: string; items: (typeof INSTRUMENTS)[number][] }[] = [
-  { label: "Ambient", items: ["piano", "marimba", "glass", "felt", "bell", "choir", "strings", "air", "sub", "pluck"] },
+  { label: "Ambient", items: ["piano", "rhodes", "marimba", "glass", "felt", "bell", "choir", "strings", "air", "sub", "pluck"] },
   { label: "Orchestral", items: ["violin", "cello", "flute", "horn", "harp"] },
   { label: "Electronic", items: ["supersaw", "organ", "acid", "chip", "drums"] },
 ];
