@@ -146,7 +146,7 @@ interface Voice {
   periodCycle: number;
   mplan: { notes: MelodyNote[]; startStep: number; end: number; last: boolean } | null;
   /** Ambient loop: its own length, the notes placed in it, and the chain's state. */
-  amb: { length: number; start: number; slots: { offset: number; state: number }[]; index: number; pass: number; state: number; next: number } | null;
+  amb: { length: number; start: number; slots: { offset: number; state: number; written?: number }[]; index: number; pass: number; state: number; next: number } | null;
   /** Phrase chain: the phrase being played and the one before. */
   pw: { phrase: WalkedPhrase; prev: WalkedPhrase | null } | null;
 }
@@ -832,7 +832,10 @@ export class Engine {
     // the composed engine drives everything from one shared pulse
     if (composed && !ambient && !phraseMode) consider(this.comp.gridTime, () => this.composedStep());
     if (ambient) {
-      // a held drone underneath, moving only rarely
+      // a held drone underneath, moving only rarely. (Other styles leave the
+      // next chord change at "never"; after switching styles, start one now.)
+      const nowT = Math.max(this.clock, Tone.now());
+      if (!Number.isFinite(this.chord.next) || this.chord.next > nowT + 300) this.chord.next = nowT + 0.2;
       consider(this.chord.next, () => this.ambientHarmony(this.chord.next));
       for (const v of this.voices.values()) {
         if (v.layer.role === "pad" || v.layer.role === "bass" || v.kit || !v.layer.enabled) continue;
@@ -1637,10 +1640,16 @@ export class Engine {
     const m = this.markovMatrix();
     // each loop begins on a different note of the field, so together they make a chord
     let state = [0, 4, 2, 5, 3, 1][i % 6];
-    const slots = offsets.map((offset, k) => {
+    let slots: { offset: number; state: number; written?: number }[] = offsets.map((offset, k) => {
       if (k > 0) state = nextState(this.rng, m, state);
       return { offset, state };
     });
+    // a written phrase: one step per beat, notes of the field (0 = lowest), null = rest
+    const written = v.layer.theme?.steps;
+    if (written && written.some((x) => x !== null)) {
+      const beat = 60 / c.tempo.bpm;
+      slots = written.flatMap((d, k) => (d === null ? [] : [{ offset: 0.3 + k * beat, state: clamp(d, 0, 7), written: clamp(d, 0, 7) }]));
+    }
     const start = now + 0.5 + i * 2.3;
     v.amb = { length, start, slots, index: 0, pass: 0, state: slots[0]?.state ?? 0, next: start + (slots[0]?.offset ?? 0) };
   }
@@ -1654,6 +1663,8 @@ export class Engine {
     try {
       // the loop repeats exactly; only now and then (Evolution) does the
       // chain rewrite a single note of the phrase
+      // a varied note of a written phrase drifts back to what was written
+      if (a.index === 0) for (const s of a.slots) if (s.written !== undefined && s.state !== s.written && this.rng() < 0.5) s.state = s.written;
       if (a.index === 0 && a.pass > 0 && this.rng() < c.macro.evolution * 0.3) {
         const m = this.markovMatrix();
         const k = Math.floor(this.rng() * a.slots.length);
@@ -1662,7 +1673,9 @@ export class Engine {
         this.emit({ kind: "markov", time: a.start + a.slots[k].offset, layerId: v.layer.id, from, to: a.slots[k].state });
       }
       a.state = slot.state;
-      this.ambientNote(v, slot, t);
+      // Density: in a written phrase, later notes sometimes rest this time round
+      const rests = slot.written !== undefined && a.index > 0 && this.rng() > 0.45 + 0.55 * c.macro.density;
+      if (!rests) this.ambientNote(v, slot, t);
     } finally {
       a.index++;
       if (a.index >= a.slots.length) {
@@ -1714,7 +1727,8 @@ export class Engine {
       else if (v.layer.role === "bass") {
         const lo = octaveLow(Math.max(1, Math.min(2, v.layer.register.low)));
         const midi = lo + ((root - (lo % 12) + 12) % 12);
-        this.composedNote(v, midi, time + 0.5, Math.min(len, 14), 0.3 * (0.75 + 0.5 * c.macro.intensity));
+        // the low line holds for as long as the drone does
+        this.composedNote(v, midi, time + 0.5, len, 0.3 * (0.75 + 0.5 * c.macro.intensity));
       }
     }
   }

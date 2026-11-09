@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Engine, EngineEvent, Snapshot } from "@/lib/engine/Engine";
 import { type Composition, type DriftConfig, sanitizeConfig } from "@/lib/schema";
-import { CITY_4AM, blankConfig, layer as makeLayer, randomConfig } from "@/lib/presets";
+import { PRESETS, blankConfig, layer as makeLayer, randomConfig } from "@/lib/presets";
 import { uid } from "@/lib/schema";
 import { applyPatch } from "@/lib/interpret/patch";
 import { type InterpretResult, aiAvailable, interpret } from "@/lib/interpret/client";
@@ -57,14 +57,14 @@ const SURPRISE_TEXT: Record<string, string> = {
 const MAX_RECORD_SECONDS = 180;
 
 export default function Drift() {
-  const [config, setConfig] = useState<DriftConfig>(CITY_4AM);
+  const [config, setConfig] = useState<DriftConfig>(PRESETS[0]);
   const configRef = useRef(config);
   const [engine, setEngine] = useState<Engine | null>(null);
   const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
   const [ai, setAi] = useState<"checking" | "ai" | "offline">("checking");
   const [busy, setBusy] = useState<InterpretMode | null>(null);
-  const [atmo, setAtmo] = useState(CITY_4AM.atmosphere);
+  const [atmo, setAtmo] = useState(PRESETS[0].atmosphere);
   const [direct, setDirect] = useState("");
   const [log, setLog] = useState<LogItem[]>([]);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);

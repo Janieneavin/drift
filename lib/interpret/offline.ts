@@ -261,14 +261,13 @@ export function interpretOffline(mode: InterpretMode, text: string, current: Dri
   if (mode === "atmosphere") {
     const score = (words: string[]) => words.filter((w) => t.includes(w)).length;
     const candidates: [DriftConfig, number][] = [
-      [byName("Endless Piano"), score(["piano", "endless", "solo", "phrase", "aphex", "quiet piano", "study", "focus"])],
+      [byName("First Light"), score(["first light", "morning", "sunrise", "dawn", "gentle", "soft", "hopeful", "beautiful ambient"])],
+      [byName("Letter Home"), score(["letter", "home", "tender", "written", "song", "lullaby", "gentle piano", "beautiful"])],
       [byName("Departures"), score(["airport", "lounge", "waiting", "calm", "spacious", "unhurried", "eno", "ambient", "peaceful"])],
       [byName("City at 4 A.M."), score(["city", "street", "night", "4 a.m", "empty", "cold", "urban", "nostalg", "rain"])],
       [byName("Abandoned Cathedral"), score(["cathedral", "church", "light", "sun", "holy", "stone", "abandon", "dust", "temple"])],
       [byName("Uneasy Summer Evening"), score(["summer", "warm", "evening", "unsettl", "uneasy", "heat", "garden", "dusk"])],
       [byName("Underwater"), score(["water", "ocean", "sea", "float", "submerg", "deep", "swim", "tide"])],
-      [byName("Night Drive"), score(["electronic", "neon", "techno", "club", "drive", "synth", "beat", "dance", "cyber", "rave"])],
-      [byName("Orchestral Dawn"), score(["orchestra", "violin", "cello", "strings", "symphon", "cinematic", "film", "classical", "dawn"])],
       [byName("Great Vessel"), score(["expansive", "bittersweet", "climax", "build", "anthem", "ship", "vast", "progression", "swell", "epic", "uplifting"])],
     ];
     candidates.sort((a, b) => b[1] - a[1]);
